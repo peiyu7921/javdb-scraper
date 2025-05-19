@@ -14,6 +14,6 @@
 ## 🚀 安装依赖
 
 ```bash
-npm install
+yarn
 node index.js
 ```
