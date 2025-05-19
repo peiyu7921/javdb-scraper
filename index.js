@@ -7,6 +7,7 @@ import { createObjectCsvWriter } from "csv-writer";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { javdbCookie, sleepTime } from "./config.js";
+import { finished } from "stream";
 const execPromise = promisify(exec);
 
 // 🧩 选择文件夹：弹出资源管理器对话框（仅 Windows）
@@ -132,77 +133,95 @@ function collectAllFilenames(folder) {
       for (const item of items) {
         const href = await item.getAttribute("href");
         const title = await item.getAttribute("title");
-        console.log(`👌开始抓取页面：${href}`);
+        // 获取包含番号和标题的元素
+        const videoTitleElement = await item.findElement(
+          By.css(".video-title")
+        );
+
+        // 获取整个文本内容
+        const fullText = await videoTitleElement.getText();
+        const listCode = fullText.split(" ")[0];
+        console.log(`👌开始抓取页面：${listCode}:${href}`);
         await driver.executeScript("window.open(arguments[0]);", href);
         const tabs = await driver.getAllWindowHandles();
         await driver.switchTo().window(tabs[1]);
+        try {
+          await driver.wait(
+            until.elementLocated(
+              By.css('.copy-to-clipboard[data-clipboard-text^="magnet"]')
+            ),
+            10000
+          );
+          // 获取所有磁力项元素
+          const magnetItems = await driver.findElements(
+            By.css("#magnets-content .item.columns.is-desktop")
+          );
 
-        await driver.wait(
-          until.elementLocated(
-            By.css('.copy-to-clipboard[data-clipboard-text^="magnet"]')
-          ),
-          10000
-        );
+          let maxSize = 0;
+          let bestMagnet = "";
 
-        // 获取所有磁力项元素
-        const magnetItems = await driver.findElements(
-          By.css("#magnets-content .item.columns.is-desktop")
-        );
+          for (const item of magnetItems) {
+            try {
+              const magnetBtn = await item.findElement(
+                By.css(".copy-to-clipboard")
+              );
+              const magnet = await magnetBtn.getAttribute(
+                "data-clipboard-text"
+              );
 
-        let maxSize = 0;
-        let bestMagnet = "";
+              const sizeElem = await item.findElement(
+                By.css(".magnet-name .meta")
+              );
+              const sizeText = await sizeElem.getText(); // 例：6.09GB、700MB
 
-        for (const item of magnetItems) {
-          try {
-            const magnetBtn = await item.findElement(
-              By.css(".copy-to-clipboard")
-            );
-            const magnet = await magnetBtn.getAttribute("data-clipboard-text");
+              // 解析大小
+              let sizeInMB = 0;
+              const sizeMatch = sizeText.match(/([\d.]+)\s*(GB|MB)/i);
+              if (sizeMatch) {
+                const sizeVal = parseFloat(sizeMatch[1]);
+                const unit = sizeMatch[2].toUpperCase();
+                sizeInMB = unit === "GB" ? sizeVal * 1024 : sizeVal;
+              }
 
-            const sizeElem = await item.findElement(
-              By.css(".magnet-name .meta")
-            );
-            const sizeText = await sizeElem.getText(); // 例：6.09GB、700MB
-
-            // 解析大小
-            let sizeInMB = 0;
-            const sizeMatch = sizeText.match(/([\d.]+)\s*(GB|MB)/i);
-            if (sizeMatch) {
-              const sizeVal = parseFloat(sizeMatch[1]);
-              const unit = sizeMatch[2].toUpperCase();
-              sizeInMB = unit === "GB" ? sizeVal * 1024 : sizeVal;
+              if (sizeInMB > maxSize) {
+                maxSize = sizeInMB;
+                bestMagnet = magnet;
+              }
+            } catch (e) {
+              console.warn("⚠️ 跳过无效磁链项:", e.message);
             }
-
-            if (sizeInMB > maxSize) {
-              maxSize = sizeInMB;
-              bestMagnet = magnet;
-            }
-          } catch (e) {
-            console.warn("⚠️ 跳过无效磁链项:", e.message);
           }
+
+          const codeElem = await driver.findElement(
+            By.css(".panel-block.first-block a.button.copy-to-clipboard")
+          );
+          const code = await codeElem.getAttribute("data-clipboard-text");
+
+          const matchedFile = Array.from(fileNameSet).find((name) =>
+            name.includes(code)
+          );
+          const status = matchedFile ? "已下载" : "未下载";
+
+          results.push({
+            code,
+            title,
+            magnet: bestMagnet || "无磁力链接",
+            status,
+            filename: matchedFile || "",
+          });
+          console.log(
+            `✅ 已经完成抓取：${code}，状态:${status}，等待 ${
+              sleepTime / 1000
+            } 秒...`
+          );
+          await sleep(sleepTime);
+        } catch (e) {
+          console.error(
+            `${listCode}获取磁力链接失败，可能为fc2且用户没有充值vip`,
+            e
+          );
         }
 
-        const codeElem = await driver.findElement(
-          By.css(".panel-block.first-block a.button.copy-to-clipboard")
-        );
-        const code = await codeElem.getAttribute("data-clipboard-text");
-
-        const matchedFile = Array.from(fileNameSet).find((name) =>
-          name.includes(code)
-        );
-        const status = matchedFile ? "已下载" : "未下载";
-
-        results.push({
-          code,
-          title,
-          magnet: bestMagnet || "无磁力链接",
-          status,
-          filename: matchedFile || "",
-        });
-        console.log(
-          `✅ 已抓取：${code}，状态:${status}，等待 ${sleepTime / 1000} 秒...`
-        );
-        await sleep(sleepTime);
         await driver.close();
         await driver.switchTo().window(tabs[0]);
       }
