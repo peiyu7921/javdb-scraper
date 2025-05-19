@@ -22,6 +22,9 @@
     "番号",
     "爬虫"
   ],
-  "author": "authur7921",
-  "license": "MIT"
+  "author": "peiyu7921",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
 }
