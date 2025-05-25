@@ -1,2 +1,4 @@
-node_modules
+cookies.json
 result.csv
+venv/
+.deps_installed.flag

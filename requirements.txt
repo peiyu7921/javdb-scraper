@@ -1,0 +1,4 @@
+git+https://github.com/sarperavci/CloudflareBypassForScraping.git
+beautifulsoup4==4.13.4
+tqdm==4.67.1
+pandas==2.2.3
